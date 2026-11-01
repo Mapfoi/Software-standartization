@@ -96,16 +96,6 @@ def count_statements(tokens):
     """
     Общее число операторов программы (statements языка Go,
     классическое представление — НЕ Холстед).
-
-    Один statement на:
-      - объявление func (с телом)
-      - if / else if / else — ВСЯ цепочка = 1
-      - for, switch, select
-      - return, break, continue, goto, fallthrough
-      - var, const, type — по 1 на декларацию
-      - присваивание = / := / += и т.п.
-      - ++ / --
-      - вызов функции вида name(...)
     """
     count = 0
     n = len(tokens)
@@ -115,17 +105,22 @@ def count_statements(tokens):
         kind, value = tokens[i]
 
         if value == "func":
-            count += 1
+            # count += 1
             i += 1
+            # Пропускаем всё до открывающей скобки тела функции:
+            # имя, receiver, параметры, возвращаемый тип.
+            # Так имя функции не будет посчитано как вызов.
+            while i < n and tokens[i][1] != "{":
+                i += 1
             continue
 
         if value == "package":
-            count += 1
+            # count += 1
             i += 1
             continue
 
         if value == "import":
-            count += 1
+            # count += 1
             # пропустить import-строку целиком
             if i + 1 < n and tokens[i + 1][1] == "(":
                 d = 1
@@ -154,6 +149,10 @@ def count_statements(tokens):
         if value == "for":
             count += 1
             i += 1
+            # Пропускаем заголовок for до открывающей скобки тела:
+            # init; cond; post, а также range.
+            while i < n and tokens[i][1] != "{":
+                i += 1
             continue
 
         if value in ("switch", "select"):
@@ -181,11 +180,9 @@ def count_statements(tokens):
 
         if kind == "identifier" and i + 1 < n and tokens[i + 1][1] == "(":
             if value not in GO_KEYWORDS:
-                prev = tokens[i - 1][1] if i > 0 else None
-                if prev not in (".", "func"):
-                    count += 1
+                count += 1
                 i += 1
-                continue
+            continue
 
         i += 1
 
@@ -195,10 +192,8 @@ def compute_gilb(source):
     """
     Метрика Джилба:
       CL  — абсолютная сложность = сумма всех ветвлений
-            (if / else if, for, switch/select: n ветвей дают n-1)
-      cl  — CL / N, где N — statements языка (классическое представление)
+      cl  — CL / N
       CLI — максимальная вложенность условий
-            (switch с n ветвями эквивалентен n-1 if-else с вложенностью n-2)
     """
     tokens = lex_go(source)
     n = len(tokens)
@@ -218,9 +213,8 @@ def compute_gilb(source):
         return n
 
     def count_cases(start, end):
-        """Считает case (без default) и наличие default на верхнем уровне."""
+        """Считает case на верхнем уровне switch/select. default не является условием."""
         nc = 0
-        hd = False
         d = 0
         for k in range(start, end):
             v = tokens[k][1]
@@ -228,12 +222,9 @@ def compute_gilb(source):
                 d += 1
             elif v == "}":
                 d -= 1
-            elif d == 0:
-                if v == "case":
-                    nc += 1
-                elif v == "default":
-                    hd = True
-        return nc, hd
+            elif d == 0 and v == "case":
+                nc += 1
+        return nc
 
     def process_block(start, end, base_depth):
         i = start
@@ -265,14 +256,13 @@ def compute_gilb(source):
                     i += 1
                     continue
                 close = matching_brace(j)
-                nc, hd = count_cases(j + 1, close)
-                nb = nc
+                # Каждый case — условие. default — аналог else и условие не добавляет.
+                nb = count_cases(j + 1, close)
                 if nb >= 1:
-                    cl_holder[0] += nb - 1
-                    if nb >= 2:
-                        eff = base_depth + nb - 2
-                        if eff > max_depth_holder[0]:
-                            max_depth_holder[0] = eff
+                    cl_holder[0] += nb
+                    eff = base_depth + nb - 1
+                    if eff > max_depth_holder[0]:
+                        max_depth_holder[0] = eff
                 process_block(j + 1, close, base_depth + 1)
                 i = close + 1
 
@@ -395,7 +385,8 @@ class GilbApp:
         hint = ttk.Label(
             results_frame,
             text="N считается по statements языка: if-цепочка = 1, каждый return = 1, "
-                 "каждое присваивание = 1. Switch с n ветвями даёт n-1 к CL и n-2 к CLI.",
+                 "каждое присваивание = 1. Каждый case в switch — условие (CL +1), "
+                 "default условие не добавляет. CLI у switch как у цепочки if / else if.",
             anchor="w",
             foreground="#666",
         )

@@ -4,13 +4,23 @@ import "fmt"
 
 func main() {
 	x := 5
+	icount := 0
 
 	if x > 10 {
 		fmt.Println("gt10")
 	} else if x > 0 {
-		for i := 0; i < 3; i++ {
+		for i := 0; i < 12; i++ {
 			if i == 1 {
 				fmt.Println("deep")
+			} else {
+				switch i {
+					case 2:
+						icount := 1
+					case 5:
+						icount := 3
+					case 11:
+						icount := 6					
+				}
 			}
 		}
 	} else {
@@ -35,6 +45,9 @@ func main() {
 		fmt.Println("five")
 	case 3:
 		fmt.Println("three")
+		if x > icount {
+			fmt.Println("Bigger")
+		}
 	default:
 		fmt.Println("other")
 	}
